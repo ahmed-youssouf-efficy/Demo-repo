@@ -1,0 +1,54 @@
+--------------- Prompt -------------------
+
+The issue: 
+*****
+The "Login" button is unresponsive when clicked.
+Users can't log in, and no error message appears.
+They should be redirected to the dashboard after a successful login.
+*****
+***** Write a JIRA bug ticket using this structure: *****  
+1) Problem Definition  
+2) Steps to Reproduce (Gherkin syntax)  
+3) Acceptance Criteria (Gherkin syntax)  
+4) Environment  
+
+Keep it clear and structured
+
+
+
+
+--------- Output ------------------
+**JIRA Bug Ticket**
+
+**Problem Definition:**
+The "Login" button is unresponsive when clicked. Users are unable to log in, and no error message appears. After a successful login, users should be redirected to the dashboard, but this functionality is currently not working.
+
+**Steps to Reproduce:**
+
+Given the user is on the login page
+When the user enters valid credentials in the username and password fields
+And the user clicks on the "Login" button
+Then nothing happens, and the user remains on the login page
+And no error message is displayed
+```
+
+**Acceptance Criteria:**
+
+Scenario: Successful login
+Given the user is on the login page
+When the user enters valid credentials in the username and password fields
+And the user clicks on the "Login" button
+Then the user should be redirected to the dashboard
+
+Scenario: Unsuccessful login
+Given the user is on the login page
+When the user enters invalid credentials in the username and password fields
+And the user clicks on the "Login" button
+Then an appropriate error message should be displayed
+```
+
+**Environment:**
+- Web Browser: Chrome 89, Firefox 86, Safari 14
+- Operating System: Windows 10, macOS Big Sur
+- Application Version: v1.2.3
+```
