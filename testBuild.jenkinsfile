@@ -1,0 +1,489 @@
+BACKEND = [
+    repository: "https://gitlab.efficy.cloud/unity/efficy-conversion.git"
+]
+
+FRONTEND = [
+    repository: "https://gitlab.efficy.io/unity/webapp.git"
+]
+
+HOST = "10.3.54.100"
+
+HOST_SERVICES = [
+        crm: "10.3.54.100",
+        dispatcher: "10.3.54.100", //vm-tst-rd03 - 10.3.54.102
+        runner: "10.3.54.100", //vm-tst-rd03 - 10.3.54.102
+]
+
+PRODUCT_NAME = "maxo"
+ARCHIVE_NAME = "${PRODUCT_NAME}.tar.gz"
+
+TARGET = [:]
+
+pipeline {
+    agent { label "buildnode1" }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: "4", artifactNumToKeepStr: "4"))
+        timeout(time: 60, unit: "MINUTES")
+        timestamps()
+        skipDefaultCheckout()
+    }
+
+    parameters {
+        // choice(name: "ENV", choices: ["sandbox01", "sandbox02", "sandbox03", "sandbox04", "sandbox05", "sandbox06", "sandbox07", "sandbox08", "sandbox09", "sandbox10", "sandbox11", "sandbox12", "sandbox13", "sandbox14","sandbox15","sandbox16", "sandbox17", "staging01", "sandbox-proxy", "efficyu-packaging" ], description: "On which environment do you want to deploy?")
+        // sandbox09, sandbox13, sandbox14 are temporary removed because another job must be used if we want to build with Vite
+        choice(name: "ENV", choices: ["sandbox01", "sandbox02", "sandbox03", "sandbox04", "sandbox05", "sandbox06", "sandbox07", "sandbox08", "sandbox10", "sandbox11", "sandbox12","sandbox14","sandbox15","sandbox16", "sandbox17", "sandbox18", "staging01", "sandbox-proxy", "efficyu-packaging" ], description: "On which environment do you want to deploy?")
+        string name: "BACKEND_BRANCH_NAME", defaultValue: "develop", description: "Backend: Which branch-tag name pattern do you want to use?"
+        string name: "FRONTEND_BRANCH_NAME", defaultValue: "develop", description: "Frontend: Which branch name pattern do you want to use?"
+        choice(name: "BUILD_MODE", choices: ["development", "production"], description: "Add mode parameter to the frontend build process")
+        booleanParam(name: "deployFTP", defaultValue: false, description: "Do you want to deploy the build on the releases FTP?")
+    }
+
+    stages {
+        stage ("Checkout") {
+            steps {
+                cleanWs()
+
+                script {
+                    BACKEND.dir = "${env.WORKSPACE}/backend"
+                    FRONTEND.dir = "${env.WORKSPACE}/frontend"
+                    TARGET.dir = "${env.WORKSPACE}/${PRODUCT_NAME}"
+
+                    switch (params.ENV) {
+                        case "sandbox01":
+                            BACKEND.branch = "team/core/main"
+                            FRONTEND.branch = "team/core/main"
+                            break
+                        case "sandbox02":
+                            BACKEND.branch = "team/integrations/main"
+                            FRONTEND.branch = "team/integrations/main"
+                            break
+                        case "sandbox03":
+                            BACKEND.branch = "team/lead/main"
+                            FRONTEND.branch = "team/lead/main"
+                            BACKEND.scheduler = true
+                            break
+                        case "sandbox04":
+                            BACKEND.branch = "team/customer-service/main"
+                            FRONTEND.branch = "team/customer-service/main"
+                            BACKEND.scheduler = true
+                            break
+                        case "sandbox05":
+                            BACKEND.branch = "team/sales/main"
+                            FRONTEND.branch = "team/sales/main"
+                            break
+                        case "sandbox06":
+                            BACKEND.branch = "team/foundations/main"
+                            FRONTEND.branch = "team/foundations/main"
+                            break
+                        case "sandbox07":
+                            BACKEND.branch = "team/lead/apsis-dev"
+                            FRONTEND.branch = "team/lead/apsis-dev"
+                            BACKEND.scheduler = true
+                            break
+                        case "sandbox09": // another job must be used if we want to build with Vite
+                            BACKEND.branch = "v1.2.39-hotfix.2"
+                            FRONTEND.branch = "v1.2.39-hotfix.2"
+                            BACKEND.scheduler = true
+                            break
+                        case "sandbox10":
+                            BACKEND.branch = "team/design/main"
+                            FRONTEND.branch = "team/design/main"
+                            break
+                        case "sandbox11":
+                            BACKEND.branch = "v2.1.11"
+                            FRONTEND.branch = "v2.1.11"
+                            break
+                        case "sandbox12":
+                            BACKEND.branch = "v2.1.11"
+                            FRONTEND.branch = "v2.1.11"
+                            break
+                        case "sandbox13": // another job must be used if we want to build with Vite
+                            BACKEND.branch = "v2.0.15"
+                            FRONTEND.branch = "v2.0.15"
+                            break
+                        case "sandbox14":
+                            BACKEND.branch = "v2.1.9-hotfix.1"
+                            FRONTEND.branch = "v2.1.9-hotfix.1"
+                            break
+                        case "sandbox15":
+                            BACKEND.branch = "develop"
+                            FRONTEND.branch = "develop"
+                            break
+                        case "sandbox16":
+                            BACKEND.branch = "team/lead/apsis-qa"
+                            FRONTEND.branch = "team/lead/apsis-qa"
+                            BACKEND.scheduler = true
+                            break
+                        case "sandbox17":
+                            BACKEND.branch = "team/lead/apsis-qa"
+                            FRONTEND.branch = "team/lead/apsis-qa"
+                            BACKEND.scheduler = true
+                            break
+                          case "sandbox18":
+                            BACKEND.branch = "team/sales/main"
+                            FRONTEND.branch = "team/sales/main"
+                            break
+                        case "sandbox-proxy":
+                            BACKEND.branch = "team/integrations/main"
+                            FRONTEND.branch = "team/integrations/main"
+                            break
+                        case "efficyu-packaging":
+                            BACKEND.branch = "team/integrations/main"
+                            FRONTEND.branch = "team/integrations/main"
+                            break
+                        case "staging01":
+                            BACKEND.branch = "develop"
+                            FRONTEND.branch = "develop"
+                            break
+                        default:
+                            BACKEND.branch = params.BACKEND_BRANCH_NAME
+                            FRONTEND.branch = params.FRONTEND_BRANCH_NAME
+                    }
+
+                    echo "Backend branch: ${BACKEND.branch}"
+                    echo "Frontend branch: ${FRONTEND.branch}"
+                    echo "Environment: ${params.ENV}"
+
+                    def checkoutTasks = [:]
+
+                    checkoutTasks.BACKEND = {
+                        dir(BACKEND.dir) {
+                            checkoutCode(BACKEND.repository, BACKEND.branch)
+                        }
+                    }
+
+                    checkoutTasks.FRONTEND = {
+                        dir(FRONTEND.dir) {
+                            checkoutCode(FRONTEND.repository, FRONTEND.branch)
+                        }
+                    }
+
+                    parallel checkoutTasks
+                    prepareWorkspace()
+                }
+            }
+        }
+
+        stage("Parallel Compilation") {
+            parallel {
+                stage("Compile backend") {
+                    agent {
+                        docker {
+                            image getBackendDockerImage()
+                            reuseNode true
+                        }
+                    }
+
+                    steps {
+                        script {
+                            buildBackend()
+                            copyBackendFiles()
+                        }
+                    }
+                }
+
+                stage("Compile frontend") {
+                    agent {
+                        docker {
+                            image getFrontendDockerImage()
+                            args getDockerArgs()
+                            reuseNode true
+                        }
+                    }
+
+                    steps {
+                        script {
+                            install()
+                            buildFrontend("crm")
+                            buildFrontend("extranet")
+                            buildFrontend("outlook")
+
+                            sh "cp -r ${FRONTEND.dir}/html/* ${TARGET.dir}/fileRoot/www-assets/standard/"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage("Create archive") {
+            steps {
+                sh "tar -czf ${ARCHIVE_NAME} ${PRODUCT_NAME}/"
+                archiveArtifacts artifacts: ARCHIVE_NAME, fingerprint: true
+                stash name: ARCHIVE_NAME, includes: ARCHIVE_NAME
+                cleanWs()
+            }
+        }
+
+        stage("Upload to FTP"){
+            agent { label "deployment" }
+            when {
+                expression { params.deployFTP }
+            }
+            steps {
+                script {
+                    deployFTP()
+                }
+            }
+        }
+
+        stage("Deployment") {
+            agent { label "deployment" }
+            when {
+                expression { !params.deployFTP }
+            }
+            steps {
+                cleanWs()
+
+                script {
+                    stopServices()
+                    unstash ARCHIVE_NAME
+                    deploySandbox()
+                }
+            }
+        }
+
+        stage("Upgrade database") {
+            agent { label "deployment" }
+            when {
+                expression { !params.deployFTP }
+            }
+            steps {
+                script {
+                    upgradeDB()
+                }
+            }
+        }
+
+        stage("Start") {
+            agent { label "deployment" }
+            when {
+                expression { !params.deployFTP }
+            }
+            steps {
+                startServices()
+                updateSandboxTimestamp()
+                cleanWs()
+            }
+        }
+    }
+}
+
+def buildBackend() {
+    withCredentials([string(credentialsId: "GITLAB_REGISTRY_TOKEN", variable: "GITLAB_REGISTRY_TOKEN")]) {
+        dir(BACKEND.dir) {
+            sh """
+                chmod 744 gradlew
+                gradle --build-cache :applications:installShadowDist -g ./.gradle/cache
+                (git symbolic-ref --short HEAD && git describe --abbrev=8 --always) | xargs echo >> ${BACKEND.dir}/applications/build/install/applications-shadow/lib/VERSION
+            """
+        }
+    }
+}
+
+def buildFrontend(app) {
+    if (!isBuildRequired(app)) return
+
+    modeArgument = getModeArgument()
+
+    dir(FRONTEND.dir) {
+        if (!pnpm()) {
+            sh "NODE_OPTIONS==--max-old-space-size=4096 npm run build:${app} ${modeArgument}"
+            return
+        }
+
+        sh "pnpm run build:${app} ${modeArgument}"
+    }
+}
+
+def checkoutCode(repository, branch) {
+    checkout([
+        $class: "GitSCM",
+        branches: [[name: branch]],
+        extensions: [
+            [$class: "LocalBranch", localBranch: "**"],
+            [$class: "CloneOption", depth: 1, shallow: true]
+        ],
+        userRemoteConfigs: [[
+            credentialsId: "9a73b732-7a0c-4d57-8d57-9ec09341f8b8",
+            url: repository
+        ]]
+    ])
+}
+
+def copyBackendFiles() {
+    sh """
+        cp -r ${BACKEND.dir}/applications/build/install/applications-shadow/* ${TARGET.dir}/
+        cp -r ${BACKEND.dir}/dev/fileRoot/* ${TARGET.dir}/fileRoot/
+        cp -r ${BACKEND.dir}/applications/build/resources/main/* ${TARGET.dir}/resources/
+        cp -r ${BACKEND.dir}/database/${BACKEND.structure}/* ${TARGET.dir}/${BACKEND.structure}/
+    """
+}
+
+def deployFTP() {
+    withCredentials([usernamePassword(credentialsId: "FTPJenkins", usernameVariable: "FTP_USER", passwordVariable: "FTP_PASSWORD")]) {
+        def safeBranchName = BACKEND.branch.replaceAll("/", "-")
+        def destBuild = "${PRODUCT_NAME}-${safeBranchName}.tar.gz"
+
+        sh """
+            mv ${ARCHIVE_NAME} ${destBuild}
+            ftp -inv ftp.efficy.cloud <<EOF
+            user ${FTP_USER} ${FTP_PASSWORD}
+            cd /dos-perso/prerelease
+            put ${destBuild}
+            bye\nEOF
+            mv ${destBuild} ${ARCHIVE_NAME}
+        """
+    }
+}
+
+def deploySandbox() {
+    withCredentials([sshUserPrivateKey(credentialsId: "ssh-jenkins-rd01", keyFileVariable: "key")]) {
+        // copy the build to the target server1
+        // stop services - currently included in updateBuild
+        // install the build - 'chmod 600 \$key' ensures that only the user executing this command can read the variable $key
+        sh """
+            chmod 600 \$key
+            scp ${ARCHIVE_NAME} jenkins@${HOST}:/opt/tmp/${params.ENV}.${ARCHIVE_NAME}
+            ssh -i \$key ${params.ENV}@${HOST} '/opt/scripts/updateBuild.sh ${params.ENV} ${params.ENV}.${ARCHIVE_NAME}'
+        """
+    }
+}
+
+def stopServices() {
+
+    //todo - stop CRM services
+    stopService("ssh-jenkins-rd01", "jenkins", HOST_SERVICES.crm, "${params.ENV}")
+
+    //todo - stop Scheduler services
+    if (BACKEND.scheduler) {
+        stopService("ssh-jenkins-rd01", "jenkins", HOST_SERVICES.dispatcher, "${params.ENV}-dispatcher")
+        stopService("ssh-jenkins-rd01", "jenkins", HOST_SERVICES.runner, "${params.ENV}-runner")
+    }
+    //there is a generic server
+    /*
+    sudo service $1 stop
+
+    if [[ $1 != efficyu-packaging ]]
+    then
+    sudo service $1-runner stop
+    sudo service $1-dispatcher stop
+    fi
+    */
+
+    sudo $serviceName stop
+}
+
+def stopService(String credentialsId, String user, String host, String serviceName) {
+    withCredentials([sshUserPrivateKey(credentialsId: ${credentialsId}, keyFileVariable: "key")]) {
+        // 'chmod 600 \$key' ensures that only the user executing this command can read the variable $key
+        sh """
+            chmod 600 \$key
+            ssh -i \$key ${user}@${host} '/opt/scripts/stopService.sh ${serviceName}'
+        """
+    }
+}
+
+def getDockerArgs() {
+    return "-v /opt/jenkins:/opt/jenkins -e ${!pnpm() ? 'npm_config_cache=/opt/jenkins/.npm' : 'COREPACK_HOME=/opt/jenkins/.corepack'}"
+}
+
+def getBackendDockerImage() {
+    return sh(script: "grep -i 'image:' ${BACKEND.dir}/.gitlab-ci.yml | head -n 1 | awk '{print \$2}'", returnStdout: true).trim()
+}
+
+def getFrontendDockerImage() {
+    if (pnpm()) return "evc2efficy/test-evc:frontend-2.2.0"
+    def image = sh(script: "jq -r '.engines.node' ${FRONTEND.dir}/package.json | sed 's/^\\^//'", returnStdout: true).trim()
+    return "node:${image}"
+}
+
+def getModeArgument() {
+    if (pnpm()) return "--env-mode=${params.BUILD_MODE}"
+
+    def mode = params.BUILD_MODE == "development" ? "qa" : "production"
+    return "-- --env-mode=${mode}"
+}
+
+def install() {
+    withCredentials([string(credentialsId: "GITLAB_REGISTRY_TOKEN", variable: "GITLAB_REGISTRY_TOKEN")]) {
+        dir(FRONTEND.dir) {
+            if (!pnpm()) {
+                sh "npm ci --cache /opt/jenkins/.npm"
+                return
+            }
+            sh "pnpm install --frozen-lockfile --store-dir=/opt/jenkins/.pnpm_store"
+        }
+    }
+}
+
+def isBuildRequired(app) {
+    return (app == "outlook" && params.ENV == "sandbox-proxy") || (app != "outlook" && params.ENV != "sandbox-proxy") || params.deployFTP
+}
+
+def pnpm() {
+    return fileExists("${FRONTEND.dir}/pnpm-lock.yaml")
+}
+
+def prepareWorkspace() {
+    BACKEND.structure = fileExists("${BACKEND.dir}/database/db-structure") ? "db-structure" : "unity-db"
+
+    sh """
+        mkdir -p ${TARGET.dir}/fileRoot/www-assets/standard
+        mkdir ${TARGET.dir}/lib
+        mkdir ${TARGET.dir}/resources
+        mkdir ${TARGET.dir}/${BACKEND.structure}
+    """
+}
+
+def startServices() {
+    withCredentials([sshUserPrivateKey(credentialsId: "ssh-jenkins-rd01", keyFileVariable: "key")]) {
+        // 'chmod 600 \$key' ensures that only the user executing this command can read the variable $key
+        sh """
+            chmod 600 \$key
+            ssh -i \$key ${params.ENV}@${HOST} '/opt/scripts/service.sh ${params.ENV}'
+        """
+
+        if (!BACKEND.scheduler) return
+
+        sh "ssh -i \$key ${params.ENV}@${HOST} '/opt/scripts/service.sh ${params.ENV}-dispatcher && /opt/scripts/service.sh ${params.ENV}-runner'"
+    }
+}
+
+def updateSandboxTimestamp() {
+    withCredentials([usernamePassword(credentialsId: "FTPJenkins", usernameVariable: "FTP_USER", passwordVariable: "FTP_PASS")]) {
+        script {
+            def patternToFind = "${params.ENV};.*;"
+            def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
+            def replacementText = "${params.ENV};${timestamp};"
+
+            sh """
+                ftp -n <<-EOF
+                open ftp.efficy.cloud
+                user ${FTP_USER} \$FTP_PASS
+                get builds/versions/config/lastBuildJenkins.txt /tmp/${params.ENV}.lastBuildJenkins.txt
+                bye \nEOF
+
+                sed -i "s/${patternToFind}/${replacementText}/g" /tmp/${params.ENV}.lastBuildJenkins.txt
+
+                ftp -n <<-EOF
+                open ftp.efficy.cloud
+                user ${FTP_USER} \$FTP_PASS
+                put /tmp/${params.ENV}.lastBuildJenkins.txt builds/versions/config/lastBuildJenkins.txt
+                bye \nEOF
+            """
+        }
+    }
+}
+
+def upgradeDB() {
+    if (!isBuildRequired("crm")) return
+    withCredentials([sshUserPrivateKey(credentialsId: "ssh-jenkins-rd01", keyFileVariable: "key")]) {
+        // 'chmod 600 \$key' ensures that only the user executing this command can read the variable $key
+        sh """
+            chmod 600 \$key
+            ssh -i \$key ${params.ENV}@${HOST} '/opt/scripts/upgradeDB.sh ${params.ENV}'
+        """
+    }
+}
+
